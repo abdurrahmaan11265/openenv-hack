@@ -1,84 +1,148 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
 """
-FastAPI application for the Prompt Injection Env Environment.
+FastAPI application for the Prompt Injection Red-Teamer Environment.
 
-This module creates an HTTP server that exposes the PromptInjectionEnvironment
-over HTTP and WebSocket endpoints, compatible with EnvClient.
+Auto-generated endpoints (via create_app):
+    POST /reset   — reset environment (pass task_id in body)
+    POST /step    — execute an injection action
+    GET  /state   — current environment state
+    GET  /schema  — action/observation JSON schemas
+    GET  /health  — health check
+    WS   /ws      — WebSocket persistent session
 
-Endpoints:
-    - POST /reset: Reset the environment
-    - POST /step: Execute an action
-    - GET /state: Get current environment state
-    - GET /schema: Get action/observation schemas
-    - WS /ws: WebSocket endpoint for persistent sessions
+Additional endpoints:
+    GET  /tasks    — list all tasks with action schema
+    POST /grader   — grade a completed episode
+    POST /baseline — run OpenAI baseline agent against all tasks
 
 Usage:
-    # Development (with auto-reload):
     uvicorn server.app:app --reload --host 0.0.0.0 --port 8000
-
-    # Production:
-    uvicorn server.app:app --host 0.0.0.0 --port 8000 --workers 4
-
-    # Or run directly:
-    python -m server.app
 """
+
+import json
+import os
+import subprocess
+import sys
+from typing import List
+
+from pydantic import BaseModel
 
 try:
     from openenv.core.env_server.http_server import create_app
 except Exception as e:  # pragma: no cover
     raise ImportError(
-        "openenv is required for the web interface. Install dependencies with '\n    uv sync\n'"
+        "openenv is required. Install dependencies with 'pip install openenv-core'"
     ) from e
 
 try:
-    from ..models import PromptInjectionAction, PromptInjectionObservation
+    from ..models import InjectionAction, InjectionObservation
     from .prompt_injection_env_environment import PromptInjectionEnvironment
-except ModuleNotFoundError:
-    from models import PromptInjectionAction, PromptInjectionObservation
+    from .tasks import TASKS, grade_episode
+except ImportError:
+    from models import InjectionAction, InjectionObservation
     from server.prompt_injection_env_environment import PromptInjectionEnvironment
+    from server.tasks import TASKS, grade_episode
 
 
-# Create the app with web interface and README integration
 app = create_app(
     PromptInjectionEnvironment,
-    PromptInjectionAction,
-    PromptInjectionObservation,
+    InjectionAction,
+    InjectionObservation,
     env_name="prompt_injection_env",
-    max_concurrent_envs=1,  # increase this number to allow more concurrent WebSocket sessions
+    max_concurrent_envs=4,
 )
 
 
+# ---------------------------------------------------------------------------
+# /tasks — list available tasks
+# ---------------------------------------------------------------------------
+
+@app.get("/tasks", summary="List all tasks", tags=["Red-Teamer"])
+def list_tasks():
+    """Return all available tasks with their metadata and action schema."""
+    return [
+        {
+            "id": task.id,
+            "name": task.name,
+            "description": task.description,
+            "difficulty": task.difficulty,
+            "max_turns": task.max_turns,
+            "action_schema": {
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "description": "The injection prompt to send to the target app",
+                    }
+                },
+                "required": ["prompt"],
+            },
+        }
+        for task in TASKS.values()
+    ]
+
+
+# ---------------------------------------------------------------------------
+# /grader — grade a completed episode
+# ---------------------------------------------------------------------------
+
+class GraderRequest(BaseModel):
+    task_id: str
+    responses: List[str]
+    successes: List[bool]
+
+
+@app.post("/grader", summary="Grade a completed episode", tags=["Red-Teamer"])
+def grader_endpoint(body: GraderRequest):
+    """
+    Grade a completed episode.
+    Pass the list of target responses and per-turn success flags.
+    Returns a score in [0.0, 1.0].
+    """
+    score = grade_episode(body.task_id, body.responses, body.successes)
+    return {"task_id": body.task_id, "score": score}
+
+
+# ---------------------------------------------------------------------------
+# /baseline — run the OpenAI baseline agent
+# ---------------------------------------------------------------------------
+
+@app.post("/baseline", summary="Run baseline agent against all tasks", tags=["Red-Teamer"])
+def baseline_endpoint():
+    """
+    Trigger the baseline inference script.
+    Requires OPENAI_API_KEY to be set in the environment.
+    Returns per-task scores and overall average.
+    """
+    baseline_path = os.path.join(os.path.dirname(__file__), "..", "baseline.py")
+    baseline_path = os.path.abspath(baseline_path)
+
+    if not os.path.exists(baseline_path):
+        return {"error": "baseline.py not found", "scores": {}}
+
+    result = subprocess.run(
+        [sys.executable, baseline_path, "--json"],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+
+    if result.returncode != 0:
+        return {"error": result.stderr[:500], "scores": {}}
+
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return {"error": "Could not parse baseline output", "raw": result.stdout[:500]}
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
 def main(host: str = "0.0.0.0", port: int = 8000):
-    """
-    Entry point for direct execution via uv run or python -m.
-
-    This function enables running the server without Docker:
-        uv run --project . server
-        uv run --project . server --port 8001
-        python -m prompt_injection_env.server.app
-
-    Args:
-        host: Host address to bind to (default: "0.0.0.0")
-        port: Port number to listen on (default: 8000)
-
-    For production deployments, consider using uvicorn directly with
-    multiple workers:
-        uvicorn prompt_injection_env.server.app:app --workers 4
-    """
     import uvicorn
-
     uvicorn.run(app, host=host, port=port)
 
 
 if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--port", type=int, default=8000)
-    args = parser.parse_args()
-    main(port=args.port)
+    main()

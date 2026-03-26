@@ -4,4 +4,9 @@ type: space
 runtime: fastapi
 app: server.app:app
 port: 8000
-
+description: "Red-team environment for evaluating AI agents on prompt injection attacks against simulated AI apps"
+tags:
+  - security
+  - red-teaming
+  - prompt-injection
+  - openenv

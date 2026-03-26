@@ -1,16 +1,10 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
-"""Prompt Injection Env Environment."""
+"""Prompt Injection Red-Teamer Environment."""
 
 from .client import PromptInjectionEnv
-from .models import PromptInjectionAction, PromptInjectionObservation
+from .models import InjectionAction, InjectionObservation
 
 __all__ = [
-    "PromptInjectionAction",
-    "PromptInjectionObservation",
+    "InjectionAction",
+    "InjectionObservation",
     "PromptInjectionEnv",
 ]
