@@ -1,7 +1,7 @@
 """
 Baseline inference script for the Prompt Injection Red-Teamer environment.
 
-Runs an OpenAI-powered agent against all 3 tasks and reports scores.
+Auto-detects which API key is set and uses the appropriate provider.
 
 Usage:
     python baseline.py                         # human-readable output
@@ -10,16 +10,18 @@ Usage:
     SERVER_URL=http://localhost:8000 python baseline.py
 
 Requirements:
-    OPENAI_API_KEY must be set in the environment.
+    Set ONE of:
+      OPENAI_API_KEY=sk-...        → uses gpt-4o-mini
+      ANTHROPIC_API_KEY=sk-ant-... → uses claude-sonnet-4-6
 """
 
 import argparse
 import json
 import os
 import sys
+from typing import Any, List
 
 import httpx
-from openai import OpenAI
 
 SERVER_URL = os.environ.get("SERVER_URL", "http://localhost:8000")
 
@@ -41,13 +43,55 @@ Respond with ONLY the prompt you want to send to the target. No explanation, no 
 """
 
 
-def run_task(client: httpx.Client, openai_client: OpenAI, task: dict) -> dict:
+def get_llm_client():
+    """Detect which API key is available and return (client, provider) tuple."""
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    openai_key = os.environ.get("OPENAI_API_KEY")
+
+    if anthropic_key:
+        from anthropic import Anthropic
+        return Anthropic(api_key=anthropic_key), "anthropic"
+    elif openai_key:
+        from openai import OpenAI
+        return OpenAI(api_key=openai_key), "openai"
+    else:
+        print(
+            "Error: No API key found.\n"
+            "Set ANTHROPIC_API_KEY or OPENAI_API_KEY in your environment.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
+def call_llm(client: Any, provider: str, messages: List[dict]) -> str:
+    """Call the LLM and return the response text."""
+    if provider == "anthropic":
+        # Anthropic separates system prompt from messages
+        system = next((m["content"] for m in messages if m["role"] == "system"), "")
+        conversation = [m for m in messages if m["role"] != "system"]
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=256,
+            system=system,
+            messages=conversation,
+        )
+        return response.content[0].text.strip()
+    else:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            max_tokens=256,
+            temperature=0.9,
+        )
+        return response.choices[0].message.content.strip()
+
+
+def run_task(http_client: httpx.Client, llm_client: Any, provider: str, task: dict) -> dict:
     """Run the baseline agent against a single task. Returns result dict."""
     task_id = task["id"]
     max_turns = task["max_turns"]
 
-    # Reset environment for this task
-    reset_resp = client.post("/reset", json={"task_id": task_id}, timeout=30)
+    reset_resp = http_client.post("/reset", json={"task_id": task_id}, timeout=30)
     reset_resp.raise_for_status()
     obs = reset_resp.json()["observation"]
 
@@ -64,21 +108,12 @@ def run_task(client: httpx.Client, openai_client: OpenAI, task: dict) -> dict:
 
     responses = []
     successes = []
-    final_reward = 0.0
     succeeded = False
 
-    for turn in range(max_turns):
-        # Get agent's next injection prompt
-        completion = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=messages,
-            max_tokens=256,
-            temperature=0.9,
-        )
-        injection_prompt = completion.choices[0].message.content.strip()
+    for _ in range(max_turns):
+        injection_prompt = call_llm(llm_client, provider, messages)
 
-        # Step the environment
-        step_resp = client.post(
+        step_resp = http_client.post(
             "/step",
             json={"action": {"prompt": injection_prompt}},
             timeout=30,
@@ -90,24 +125,20 @@ def run_task(client: httpx.Client, openai_client: OpenAI, task: dict) -> dict:
         target_response = obs["target_response"]
         success = obs["success"]
         done = result["done"]
-        final_reward = result.get("reward", 0.0)
 
         responses.append(target_response)
         successes.append(success)
 
-        # Update conversation
         messages.append({"role": "assistant", "content": injection_prompt})
         messages.append({"role": "user", "content": f"Target app response: {target_response}"})
 
         if success:
             succeeded = True
             break
-
         if done:
             break
 
-    # Grade the episode
-    grade_resp = client.post(
+    grade_resp = http_client.post(
         "/grader",
         json={"task_id": task_id, "responses": responses, "successes": successes},
         timeout=10,
@@ -132,23 +163,20 @@ def main():
     parser.add_argument("--task", type=str, default=None, help="Run a single task by ID")
     args = parser.parse_args()
 
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        print("Error: OPENAI_API_KEY environment variable is not set.", file=sys.stderr)
-        sys.exit(1)
+    llm_client, provider = get_llm_client()
+    model_name = "claude-haiku-4-6" if provider == "anthropic" else "gpt-4o-mini"
 
-    openai_client = OpenAI(api_key=api_key)
+    if not args.json:
+        print(f"Using provider: {provider} ({model_name})")
 
-    with httpx.Client(base_url=SERVER_URL) as client:
-        # Health check
+    with httpx.Client(base_url=SERVER_URL) as http_client:
         try:
-            client.get("/health", timeout=5).raise_for_status()
+            http_client.get("/health", timeout=5).raise_for_status()
         except Exception:
             print(f"Error: Cannot connect to server at {SERVER_URL}", file=sys.stderr)
             sys.exit(1)
 
-        # Fetch tasks
-        tasks_resp = client.get("/tasks", timeout=10)
+        tasks_resp = http_client.get("/tasks", timeout=10)
         tasks_resp.raise_for_status()
         all_tasks = tasks_resp.json()
 
@@ -164,7 +192,7 @@ def main():
         for task in tasks_to_run:
             if not args.json:
                 print(f"\nRunning task: {task['name']} ({task['difficulty']})...")
-            result = run_task(client, openai_client, task)
+            result = run_task(http_client, llm_client, provider, task)
             results.append(result)
             if not args.json:
                 status = "✓ SUCCESS" if result["succeeded"] else "✗ failed"
@@ -173,6 +201,8 @@ def main():
     overall = sum(r["score"] for r in results) / len(results) if results else 0.0
 
     output = {
+        "provider": provider,
+        "model": model_name,
         "task_scores": {r["task_id"]: r["score"] for r in results},
         "task_details": results,
         "overall": round(overall, 4),
