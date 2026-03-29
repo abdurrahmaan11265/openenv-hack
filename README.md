@@ -2,7 +2,7 @@
 title: Prompt Injection Red-Teamer
 emoji: 🔐
 colorFrom: red
-colorTo: orange
+colorTo: red
 sdk: docker
 pinned: false
 app_port: 8000
