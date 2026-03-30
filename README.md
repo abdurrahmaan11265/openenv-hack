@@ -1,6 +1,6 @@
 ---
 title: Prompt Injection Red-Teamer
-emoji: 🔐
+emoji: 🛡️
 colorFrom: red
 colorTo: red
 sdk: docker
