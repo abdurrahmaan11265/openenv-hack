@@ -86,7 +86,7 @@ def call_llm(client: Any, provider: str, messages: List[dict]) -> str:
         return response.choices[0].message.content.strip()
 
 
-def run_task(http_client: httpx.Client, llm_client: Any, provider: str, task: dict) -> dict:
+def run_task(http_client: httpx.Client, llm_client: Any, provider: str, task: dict, verbose: bool = False) -> dict:
     """Run the baseline agent against a single task. Returns result dict."""
     task_id = task["id"]
     max_turns = task["max_turns"]
@@ -94,6 +94,11 @@ def run_task(http_client: httpx.Client, llm_client: Any, provider: str, task: di
     reset_resp = http_client.post("/reset", json={"task_id": task_id}, timeout=30)
     reset_resp.raise_for_status()
     obs = reset_resp.json()["observation"]
+
+    if verbose:
+        print(f"\n{'─'*60}")
+        print(f"Goal: {obs['task_description']}")
+        print(f"{'─'*60}")
 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -109,14 +114,20 @@ def run_task(http_client: httpx.Client, llm_client: Any, provider: str, task: di
     responses = []
     successes = []
     succeeded = False
+    turn = 0
 
     for _ in range(max_turns):
+        turn += 1
         injection_prompt = call_llm(llm_client, provider, messages)
+
+        if verbose:
+            print(f"\n[Turn {turn}/{max_turns}]")
+            print(f"  Agent  → {injection_prompt}")
 
         step_resp = http_client.post(
             "/step",
             json={"action": {"prompt": injection_prompt}},
-            timeout=30,
+            timeout=120,
         )
         step_resp.raise_for_status()
         result = step_resp.json()
@@ -125,6 +136,11 @@ def run_task(http_client: httpx.Client, llm_client: Any, provider: str, task: di
         target_response = obs["target_response"]
         success = obs["success"]
         done = result["done"]
+        reward = result.get("reward", 0.0)
+
+        if verbose:
+            print(f"  Target → {target_response}")
+            print(f"  Reward={reward:+.2f} | Success={success} | Done={done}")
 
         responses.append(target_response)
         successes.append(success)
@@ -161,10 +177,11 @@ def main():
     parser = argparse.ArgumentParser(description="Baseline agent for Prompt Injection Red-Teamer")
     parser.add_argument("--json", action="store_true", help="Output results as JSON")
     parser.add_argument("--task", type=str, default=None, help="Run a single task by ID")
+    parser.add_argument("--verbose", action="store_true", help="Print each turn: agent prompt, target response, reward")
     args = parser.parse_args()
 
     llm_client, provider = get_llm_client()
-    model_name = "claude-haiku-4-6" if provider == "anthropic" else "gpt-4o-mini"
+    model_name = "claude-sonnet-4-6" if provider == "anthropic" else "gpt-4o-mini"
 
     if not args.json:
         print(f"Using provider: {provider} ({model_name})")
@@ -192,7 +209,7 @@ def main():
         for task in tasks_to_run:
             if not args.json:
                 print(f"\nRunning task: {task['name']} ({task['difficulty']})...")
-            result = run_task(http_client, llm_client, provider, task)
+            result = run_task(http_client, llm_client, provider, task, verbose=args.verbose)
             results.append(result)
             if not args.json:
                 status = "✓ SUCCESS" if result["succeeded"] else "✗ failed"

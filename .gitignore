@@ -18,8 +18,7 @@ build/
 .env.*
 !.env.example
 
-# uv
-uv.lock
+# uv.lock is intentionally tracked — required by openenv validate
 
 # IDE
 .vscode/

@@ -43,6 +43,17 @@ except ImportError:
     from server.tasks import TASKS, grade_episode
 
 
+def _warmup_semantic_matcher():
+    """Pre-load MiniLM model at startup so first /step request doesn't timeout."""
+    try:
+        from server.semantic_matcher import SemanticMatcher
+    except ImportError:
+        from semantic_matcher import SemanticMatcher
+    SemanticMatcher().similarity("warmup", "mode_switch")
+
+
+_warmup_semantic_matcher()
+
 app = create_app(
     PromptInjectionEnvironment,
     InjectionAction,
