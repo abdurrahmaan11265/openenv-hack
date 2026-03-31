@@ -24,6 +24,7 @@ import subprocess
 import sys
 from typing import List
 
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 try:
@@ -61,6 +62,16 @@ app = create_app(
     env_name="prompt_injection_env",
     max_concurrent_envs=4,
 )
+
+
+# ---------------------------------------------------------------------------
+# / and /web — redirect to interactive docs
+# ---------------------------------------------------------------------------
+
+@app.get("/", include_in_schema=False)
+@app.get("/web", include_in_schema=False)
+def root():
+    return RedirectResponse(url="/docs")
 
 
 # ---------------------------------------------------------------------------
