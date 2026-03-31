@@ -115,7 +115,7 @@ def run_task(http_client: httpx.Client, llm_client: OpenAI, task: dict) -> dict:
             result = http_client.post(
                 "/step",
                 json={"action": {"prompt": injection_prompt}},
-                timeout=30,
+                timeout=60,
             )
             result.raise_for_status()
             result_data = result.json()
