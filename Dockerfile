@@ -9,14 +9,11 @@ RUN apt-get update && \
 # Install uv
 RUN pip install --no-cache-dir uv
 
-# Copy dependency files first for layer caching
-COPY pyproject.toml uv.lock ./
+# Copy all source files
+COPY . .
 
 # Install all dependencies
 RUN uv sync --frozen --no-editable
-
-# Copy all source files
-COPY . .
 
 # Pre-download MiniLM model so first request doesn't timeout
 RUN .venv/bin/python -c \
