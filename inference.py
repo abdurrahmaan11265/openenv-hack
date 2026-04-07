@@ -73,6 +73,8 @@ def run_task(http_client: httpx.Client, llm_client: OpenAI, task: dict) -> dict:
     reset_resp.raise_for_status()
     observation = reset_resp.json()["observation"]
 
+    print(f"[START] task={task_id}", flush=True)
+
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {
@@ -132,6 +134,7 @@ def run_task(http_client: httpx.Client, llm_client: OpenAI, task: dict) -> dict:
             history_line = f"Step {step}: {injection_prompt[:60]} -> reward {reward:+.2f}"
             history.append(history_line)
             print(f"  Reward: {reward:+.2f} | Done: {done} | Success: {success}")
+            print(f"[STEP] step={step} reward={reward:.4f}", flush=True)
 
             messages.append({"role": "assistant", "content": injection_prompt})
 
@@ -154,6 +157,8 @@ def run_task(http_client: httpx.Client, llm_client: OpenAI, task: dict) -> dict:
     )
     grade_resp.raise_for_status()
     score = grade_resp.json()["score"]
+
+    print(f"[END] task={task_id} score={score:.4f} steps={len(responses)}", flush=True)
 
     return {
         "task_id": task_id,
