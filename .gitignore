@@ -38,3 +38,5 @@ logs/
 .pytest_cache/
 .coverage
 htmlcov/
+
+knowledge_base/
