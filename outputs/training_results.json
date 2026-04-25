@@ -1,0 +1,48 @@
+{
+  "model": "unsloth/Qwen2.5-1.5B-Instruct + GRPO LoRA",
+  "training_steps": 150,
+  "num_generations": 4,
+  "baseline_score": 0.53,
+  "expert_agent_score": 0.95,
+  "trained_agent_task_scores": {
+    "customer_service": 0.95,
+    "document_summarizer": 0.95
+  },
+  "trained_agent_overall": 0.95,
+  "reward_curve": {
+    "steps": [
+      10,
+      20,
+      30,
+      40,
+      50,
+      60,
+      70,
+      80,
+      90,
+      100,
+      110,
+      120,
+      130,
+      140,
+      150
+    ],
+    "rewards": [
+      0.625,
+      0.8113,
+      0.6438,
+      0.8238,
+      0.8438,
+      0.8375,
+      0.8438,
+      0.8375,
+      0.8662,
+      0.7925,
+      0.8375,
+      0.8438,
+      0.815,
+      0.8825,
+      0.9275
+    ]
+  }
+}
