@@ -16,6 +16,15 @@ tags:
 
 An OpenEnv environment where an AI agent plays the role of a security red-teamer, attempting to exploit prompt injection vulnerabilities in 3 simulated AI-powered applications. Target apps are fully rule-based and deterministic — no LLMs required to run the environment.
 
+## Links
+
+| Resource | URL |
+|---|---|
+| 🤗 HF Space (live environment) | https://huggingface.co/spaces/mohammedabdurrahmaan/prompt-injection-env |
+| 📝 Blog Post | [Blog.md](Blog.md) |
+| 📓 Training Notebook (Colab) | [Open in Colab](https://colab.research.google.com/drive/115pMTx0qxJgZ6BebgJkMft-Kotf3y8nc?usp=sharing) |
+| 📊 Training Results | [outputs/training_results.json](outputs/training_results.json) |
+
 ## Motivation
 
 Prompt injection is the #1 vulnerability in deployed LLM systems (OWASP LLM Top 10). This environment provides a standardised benchmark for training and evaluating agents that can discover and exploit these vulnerabilities — enabling automated red-teaming at scale.
@@ -189,7 +198,7 @@ The GRPO-trained agent (`Qwen2.5-1.5B-Instruct` + LoRA, 150 steps on Colab T4) i
 | Hardware | Colab T4 (free tier) |
 | Reward source | Live OpenEnv HF Space (`/grader` endpoint) |
 
-See [`train_grpo_completed.ipynb`](train_grpo_completed.ipynb) for the full training notebook (with Colab outputs) and [`outputs/training_results.json`](outputs/training_results.json) for raw results.
+Training notebook: [Open in Colab](https://colab.research.google.com/drive/115pMTx0qxJgZ6BebgJkMft-Kotf3y8nc?usp=sharing) — full run with outputs included. Raw results: [`outputs/training_results.json`](outputs/training_results.json).
 
 ## Project Structure
 
